@@ -1,0 +1,98 @@
+---
+title: "Processing anemometer data"
+output:
+  html_notebook:
+  html_document:
+    df_print: paged
+editor_options:
+  chunk_output_type: console
+---
+
+```{r}
+library(readxl)
+library(dygraphs)
+library(ggplot2)
+library(xts)
+```
+
+Testing out looking at the wind data from 2 anemometers deployed for a few days in ND and QB. QB sensor ends in 493, ND sensor ends in 505.
+
+```{r}
+filepath <- "../Delmarva/data/wind"
+files <- list.files(filepath, full.names = TRUE)
+```
+
+Read in QB wind data from "Processed Records sheet" without the first 2 rows. Rename columns to avoid the special characters
+
+```{r}
+windcolnames <- c("Timestamp", "Wind_direction_degree", "wind_speed_metersPerSecond", "gust_speed_metersPerSecond", "anemometer_temp_degreeC")
+
+qbwind <- readxl::read_xlsx(files[1], 
+                            sheet = "Processed Records", 
+                            skip = 3, 
+                            col_names = windcolnames,
+                            na = "#N/A",
+                            col_types = c("date", rep("numeric", 4)))
+
+ndwind <- readxl::read_xlsx(files[2], 
+                            sheet = "Processed Records", 
+                            skip = 3, 
+                            col_names = windcolnames,
+                            na = "#N/A",
+                            col_types = c("date", rep("numeric", 4)))
+
+```
+
+Plot with suggested deployment cut off times
+
+```{r}
+ggplot(qbwind, aes(x = Timestamp, y = wind_speed_metersPerSecond)) +
+  geom_line(col = "blue") +
+  # geom_point(col = "blue", size = 1, pch = 1, aes(x = Timestamp, y = gust_speed_metersPerSecond)) +
+  geom_line(data = ndwind, col = "orange") +
+  # geom_point(data = ndwind, col = "orange", size = 1, pch = 1, aes(x = Timestamp, y = gust_speed_metersPerSecond)) +
+  theme_bw()
+
+```
+
+Gusts
+```{r}
+
+ggplot(qbwind, aes(x = Timestamp, y = wind_speed_metersPerSecond)) +
+  # geom_line(col = "blue") +
+  geom_point(col = "blue", size = 1, pch = 1, aes(x = Timestamp, y = gust_speed_metersPerSecond)) +
+  # geom_line(data = ndwind, col = "orange") +
+  geom_point(data = ndwind, col = "orange", size = 1, pch = 1, aes(x = Timestamp, y = gust_speed_metersPerSecond)) +
+  theme_bw()
+```
+
+Dygraphs interactive plot
+
+Combine data frames
+```{r}
+ndwind$site <- "ND"
+qbwind$site <- "QB"
+df <- rbind(ndwind, qbwind)
+
+df_spread <- df %>% 
+  dplyr::select(Timestamp, site, wind_speed_metersPerSecond) %>%
+  tidyr::spread(key = site, value = wind_speed_metersPerSecond)
+df_xts <- xts(df_spread[-1], order.by = df_spread$Timestamp)
+
+df_spread_direction <- df %>% 
+  dplyr::select(Timestamp, site, Wind_direction_degree) %>%
+  tidyr::spread(key = site, value = Wind_direction_degree)
+# df_xts <- xts(df_spread_direction[-1], order.by = df_spread$Timestamp)
+```
+
+```{r}
+dygraph(df_xts) %>%
+  dyRangeSelector() %>%
+  dyLegend() %>%
+  dyOptions(strokeWidth = 1.5) %>%
+  dyRoller(rollPeriod = 5) %>% # plotted point represents average of specified number of timestamps
+  dyAxis("y", label = "wind speed (m/s)")
+```
+
+wind rose for direction
+
